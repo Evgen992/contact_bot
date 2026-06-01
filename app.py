@@ -1,7 +1,7 @@
 import os
 import sqlite3
 import logging
-import asyncio
+import threading
 from flask import Flask, request
 from telegram import Update
 from telegram.ext import Application, CommandHandler, ConversationHandler, MessageHandler, filters, ContextTypes
@@ -13,16 +13,12 @@ TOKEN = os.getenv("BOT_TOKEN")
 if not TOKEN:
     raise ValueError("BOT_TOKEN not set in .env")
 
-RENDER_URL = "https://contact-bot-c3hw.onrender.com"
-WEBHOOK_URL = f"{RENDER_URL}/webhook"
-
 logging.basicConfig(level=logging.INFO)
 
 flask_app = Flask(__name__)
 
-# Создаём и инициализируем Application сразу
+# Создаём приложение бота
 application = Application.builder().token(TOKEN).build()
-application.initialize()
 
 ADMIN_ID = 7354713280
 PHONE, EMAIL, VK, PHONE_ONLY, EMAIL_ONLY, VK_ONLY = range(6)
@@ -157,7 +153,7 @@ async def view(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             await update.message.reply_text("Нет данных. Используйте /add")
 
-# === Отдельные обновления ===
+# Отдельные обновления
 async def add_phone_only_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Введите номер телефона (11 цифр, 7 или 8 в начале):")
     return PHONE_ONLY
@@ -246,7 +242,7 @@ async def add_vk_only_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
     await update.message.reply_text("✅ ВК сохранён!")
     return ConversationHandler.END
 
-# === Регистрация ===
+# Регистрация обработчиков
 conv_add = ConversationHandler(
     entry_points=[CommandHandler("add", add_start)],
     states={
@@ -283,17 +279,7 @@ application.add_handler(CommandHandler("start", start))
 application.add_handler(CommandHandler("view", view))
 application.add_handler(CommandHandler("list", list_users))
 
-# === Вебхук ===
-@flask_app.route('/webhook', methods=['POST'])
-def webhook():
-    try:
-        update = Update.de_json(request.get_json(force=True), application.bot)
-        asyncio.run(application.process_update(update))
-        return "OK", 200
-    except Exception as e:
-        logging.error(f"Webhook error: {e}")
-        return "Error", 500
-
+# === Flask health check ===
 @flask_app.route('/')
 def index():
     return "Contact Bot is running", 200
@@ -302,15 +288,17 @@ def index():
 def health():
     return "OK", 200
 
-# === Точка входа ===
+# === Запуск бота в polling-режиме ===
+def run_bot():
+    application.run_polling()
+
 if __name__ == "__main__":
     db.init_db()
     
-    # Установка вебхука (один раз при запуске)
-    async def set_webhook():
-        await application.bot.set_webhook(url=WEBHOOK_URL)
-    asyncio.run(set_webhook())
+    # Запускаем бота в отдельном потоке
+    bot_thread = threading.Thread(target=run_bot)
+    bot_thread.start()
     
-    # Запуск Flask
+    # Запускаем Flask health check
     port = int(os.environ.get('PORT', 10000))
     flask_app.run(host='0.0.0.0', port=port)
