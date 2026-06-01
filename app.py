@@ -1,6 +1,8 @@
 import os
 import sqlite3
 import logging
+from threading import Thread
+from flask import Flask
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, ConversationHandler, MessageHandler, filters
 from dotenv import load_dotenv
