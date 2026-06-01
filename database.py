@@ -29,8 +29,7 @@ def validate_email(email):
     return re.match(r'^[\w\.-]+@[\w\.-]+\.\w+$', email) is not None
 
 def validate_vk(vk_url):
-    return re.match(r'^https?://(vk\.com|m\.vk\.com)/[\w\.]+$', vk_url) is not None
-
+    return vk_url and ('vk.com' in vk_url or 'm.vk.com' in vk_url)
 def add_or_update_contact(chat_id, username, phone=None, email=None, vk=None):
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
