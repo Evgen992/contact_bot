@@ -239,6 +239,19 @@ async def add_vk_only_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
     await update.message.reply_text("✅ ВК сохранён!")
     return ConversationHandler.END
 
+# ========== ДОПОЛНИТЕЛЬНЫЕ КОМАНДЫ ==========
+async def check_username(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    chat_id = update.effective_chat.id
+    conn = sqlite3.connect(db.DB_NAME)
+    cursor = conn.cursor()
+    cursor.execute("SELECT username FROM contacts WHERE chat_id = ?", (chat_id,))
+    row = cursor.fetchone()
+    conn.close()
+    if row:
+        await update.message.reply_text(f"Username в базе: @{row[0]}")
+    else:
+        await update.message.reply_text("Не найден")
+
 # ========== РЕГИСТРАЦИЯ ОБРАБОТЧИКОВ ==========
 conv_add = ConversationHandler(
     entry_points=[CommandHandler("add", add_start)],
@@ -275,6 +288,7 @@ application.add_handler(conv_vk)
 application.add_handler(CommandHandler("start", start))
 application.add_handler(CommandHandler("view", view))
 application.add_handler(CommandHandler("list", list_users))
+application.add_handler(CommandHandler("check_username", check_username))
 
 # ========== FLASK (ДЛЯ HEALTH CHECK) ==========
 flask_app = Flask(__name__)
@@ -305,11 +319,9 @@ if __name__ == "__main__":
     def start_bot_thread():
         asyncio.run(run_bot())
 
-    # Запускаем бота в отдельном потоке
     bot_thread = threading.Thread(target=start_bot_thread, daemon=True)
     bot_thread.start()
 
-    # Запускаем Flask в отдельном потоке (чтобы Render видел порт)
     flask_thread = threading.Thread(target=run_flask, daemon=True)
     flask_thread.start()
 
