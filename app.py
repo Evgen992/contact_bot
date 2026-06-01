@@ -1,6 +1,9 @@
 import os
 import sqlite3
 import logging
+import threading
+import asyncio
+from flask import Flask
 from telegram import Update
 from telegram.ext import Application, CommandHandler, ConversationHandler, MessageHandler, filters, ContextTypes
 from dotenv import load_dotenv
@@ -273,14 +276,23 @@ application.add_handler(CommandHandler("start", start))
 application.add_handler(CommandHandler("view", view))
 application.add_handler(CommandHandler("list", list_users))
 
+# ========== FLASK (ДЛЯ HEALTH CHECK) ==========
+flask_app = Flask(__name__)
 
+@flask_app.route('/')
+def index():
+    return "Bot is running", 200
+
+@flask_app.route('/health')
+def health():
+    return "OK", 200
+
+def run_flask():
+    port = int(os.environ.get('PORT', 10000))
+    flask_app.run(host='0.0.0.0', port=port, debug=False, use_reloader=False)
 
 # ========== ТОЧКА ВХОДА ==========
-# ========== ТОЧКА ВХОДА (исправленная) ==========
 if __name__ == "__main__":
-    import asyncio
-    import threading
-
     db.init_db()
 
     async def run_bot():
@@ -288,7 +300,6 @@ if __name__ == "__main__":
         await application.initialize()
         await application.start()
         await application.updater.start_polling()
-        # Держим бота работающим
         await asyncio.Event().wait()
 
     def start_bot_thread():
@@ -298,10 +309,12 @@ if __name__ == "__main__":
     bot_thread = threading.Thread(target=start_bot_thread, daemon=True)
     bot_thread.start()
 
-    # Здесь может быть запуск Flask, если он нужен, но пока убираем
+    # Запускаем Flask в отдельном потоке (чтобы Render видел порт)
+    flask_thread = threading.Thread(target=run_flask, daemon=True)
+    flask_thread.start()
+
     logging.info("Main thread keeping service alive...")
     try:
-        # Бесконечное ожидание, чтобы основной поток не завершился
         while True:
             import time
             time.sleep(10)
