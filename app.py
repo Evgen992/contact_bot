@@ -2,7 +2,7 @@ import os
 import sqlite3
 import logging
 import threading
-from flask import Flask, request
+from flask import Flask
 from telegram import Update
 from telegram.ext import Application, CommandHandler, ConversationHandler, MessageHandler, filters, ContextTypes
 from dotenv import load_dotenv
@@ -153,7 +153,6 @@ async def view(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             await update.message.reply_text("Нет данных. Используйте /add")
 
-# Отдельные обновления
 async def add_phone_only_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Введите номер телефона (11 цифр, 7 или 8 в начале):")
     return PHONE_ONLY
@@ -242,7 +241,7 @@ async def add_vk_only_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
     await update.message.reply_text("✅ ВК сохранён!")
     return ConversationHandler.END
 
-# Регистрация обработчиков
+# === Регистрация обработчиков ===
 conv_add = ConversationHandler(
     entry_points=[CommandHandler("add", add_start)],
     states={
@@ -290,6 +289,7 @@ def health():
 
 # === Запуск бота в polling-режиме ===
 def run_bot():
+    print("🚀 Запуск бота в режиме polling...")
     application.run_polling()
 
 if __name__ == "__main__":
@@ -299,6 +299,6 @@ if __name__ == "__main__":
     bot_thread = threading.Thread(target=run_bot)
     bot_thread.start()
     
-    # Запускаем Flask health check
+    # Запускаем Flask для health check
     port = int(os.environ.get('PORT', 10000))
     flask_app.run(host='0.0.0.0', port=port)
