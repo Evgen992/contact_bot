@@ -17,13 +17,12 @@ logging.basicConfig(level=logging.INFO)
 
 flask_app = Flask(__name__)
 
-# Создаём приложение бота
 application = Application.builder().token(TOKEN).build()
 
 ADMIN_ID = 7354713280
 PHONE, EMAIL, VK, PHONE_ONLY, EMAIL_ONLY, VK_ONLY = range(6)
 
-# === Обработчики команд ===
+# ========== ОБРАБОТЧИКИ КОМАНД ==========
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "👋 Привет! Я бот для сбора контактов.\n\n"
@@ -241,7 +240,7 @@ async def add_vk_only_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
     await update.message.reply_text("✅ ВК сохранён!")
     return ConversationHandler.END
 
-# === Регистрация обработчиков ===
+# ========== РЕГИСТРАЦИЯ ОБРАБОТЧИКОВ ==========
 conv_add = ConversationHandler(
     entry_points=[CommandHandler("add", add_start)],
     states={
@@ -278,7 +277,7 @@ application.add_handler(CommandHandler("start", start))
 application.add_handler(CommandHandler("view", view))
 application.add_handler(CommandHandler("list", list_users))
 
-# === Flask health check ===
+# ========== FLASK ДЛЯ HEALTH CHECK ==========
 @flask_app.route('/')
 def index():
     return "Contact Bot is running", 200
@@ -287,18 +286,18 @@ def index():
 def health():
     return "OK", 200
 
-# === Запуск бота в polling-режиме ===
-def run_bot():
-    print("🚀 Запуск бота в режиме polling...")
-    application.run_polling()
+def run_flask():
+    port = int(os.environ.get('PORT', 10000))
+    flask_app.run(host='0.0.0.0', port=port, debug=False, use_reloader=False)
 
+# ========== ТОЧКА ВХОДА ==========
 if __name__ == "__main__":
     db.init_db()
-    
-    # Запускаем бота в отдельном потоке
-    bot_thread = threading.Thread(target=run_bot)
-    bot_thread.start()
-    
-    # Запускаем Flask для health check
-    port = int(os.environ.get('PORT', 10000))
-    flask_app.run(host='0.0.0.0', port=port)
+
+    # Запускаем Flask в отдельном потоке (чтобы не блокировать бота)
+    flask_thread = threading.Thread(target=run_flask)
+    flask_thread.start()
+
+    # Запускаем бота в основном потоке
+    logging.info("🚀 Запуск бота в режиме polling...")
+    application.run_polling()
