@@ -1,7 +1,7 @@
 import os
 import sqlite3
 import logging
-from flask import Flask, request
+import asyncio
 from telegram import Update
 from telegram.ext import Application, CommandHandler, ConversationHandler, MessageHandler, filters, ContextTypes
 from dotenv import load_dotenv
@@ -12,12 +12,8 @@ TOKEN = os.getenv("BOT_TOKEN")
 if not TOKEN:
     raise ValueError("BOT_TOKEN not set in .env")
 
-RENDER_URL = "https://contact-bot-c3hw.onrender.com"
-WEBHOOK_URL = f"{RENDER_URL}/webhook"
-
 logging.basicConfig(level=logging.INFO)
 
-flask_app = Flask(__name__)
 application = Application.builder().token(TOKEN).build()
 
 ADMIN_ID = 7354713280
@@ -25,19 +21,22 @@ PHONE, EMAIL, VK, PHONE_ONLY, EMAIL_ONLY, VK_ONLY = range(6)
 
 # ========== ОБРАБОТЧИКИ КОМАНД ==========
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(
-        "👋 Привет! Я бот для сбора контактов.\n\n"
-        "📋 Основные команды:\n"
-        "/add — добавить все контакты сразу\n"
-        "/view — посмотреть свои данные\n"
-        "/view @username — данные другого пользователя\n\n"
-        "✏️ Обновить отдельно:\n"
-        "/add_phone — телефон\n"
-        "/add_email — email\n"
-        "/add_vk — ВК\n\n"
-        "🔐 Админ-команда:\n"
-        "/list — список всех"
-    )
+    try:
+        await update.message.reply_text(
+            "👋 Привет! Я бот для сбора контактов.\n\n"
+            "📋 Основные команды:\n"
+            "/add — добавить все контакты сразу\n"
+            "/view — посмотреть свои данные\n"
+            "/view @username — данные другого пользователя\n\n"
+            "✏️ Обновить отдельно:\n"
+            "/add_phone — телефон\n"
+            "/add_email — email\n"
+            "/add_vk — ВК\n\n"
+            "🔐 Админ-команда:\n"
+            "/list — список всех"
+        )
+    except Exception as e:
+        logging.error(f"Ошибка в start: {e}")
 
 async def list_users(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_chat.id != ADMIN_ID:
@@ -278,32 +277,8 @@ application.add_handler(CommandHandler("start", start))
 application.add_handler(CommandHandler("view", view))
 application.add_handler(CommandHandler("list", list_users))
 
-# ========== FLASK ЭНДПОИНТЫ ==========
-@flask_app.route('/')
-def index():
-    return "Contact Bot is running", 200
-
-@flask_app.route('/health')
-def health():
-    return "OK", 200
-
-@flask_app.route('/webhook', methods=['POST'])
-async def webhook():
-    try:
-        update = Update.de_json(request.get_json(force=True), application.bot)
-        await application.process_update(update)
-        return "OK", 200
-    except Exception as e:
-        logging.error(f"Webhook error: {e}")
-        return "Error", 500
-
-# ========== УСТАНОВКА ВЕБХУКА ==========
-async def set_webhook():
-    await application.bot.set_webhook(url=WEBHOOK_URL)
-
+# ========== ЗАПУСК БОТА ==========
 if __name__ == "__main__":
     db.init_db()
-    import asyncio
-    asyncio.run(set_webhook())
-    port = int(os.environ.get('PORT', 10000))
-    flask_app.run(host='0.0.0.0', port=port)
+    logging.info("🚀 Запуск бота в режиме polling...")
+    application.run_polling()
