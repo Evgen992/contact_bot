@@ -1,11 +1,9 @@
 import os
 import sqlite3
 import logging
-import threading
-import asyncio
-from flask import Flask
-from telegram import Update
-from telegram.ext import Application, CommandHandler, ConversationHandler, MessageHandler, filters, ContextTypes
+from flask import Flask, request
+from telegram import Update, Bot
+from telegram.ext import Dispatcher, CommandHandler, ConversationHandler, MessageHandler, filters
 from dotenv import load_dotenv
 import database as db
 
@@ -14,15 +12,24 @@ TOKEN = os.getenv("BOT_TOKEN")
 if not TOKEN:
     raise ValueError("BOT_TOKEN not set in .env")
 
+# URL твоего сервиса на Render (замени, если название другое)
+RENDER_URL = "https://contact-bot-c3hw.onrender.com"
+WEBHOOK_URL = f"{RENDER_URL}/webhook"
+
 logging.basicConfig(level=logging.INFO)
 
-application = Application.builder().token(TOKEN).build()
+# Создаём Flask приложение
+flask_app = Flask(__name__)
+
+# Инициализируем бота и диспетчер
+bot = Bot(token=TOKEN)
+dp = Dispatcher(bot, None, workers=0)
 
 ADMIN_ID = 7354713280
 PHONE, EMAIL, VK, PHONE_ONLY, EMAIL_ONLY, VK_ONLY = range(6)
 
 # ========== ОБРАБОТЧИКИ КОМАНД ==========
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def start(update: Update, context):
     await update.message.reply_text(
         "👋 Привет! Я бот для сбора контактов.\n\n"
         "📋 Основные команды:\n"
@@ -37,7 +44,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/list — список всех"
     )
 
-async def list_users(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def list_users(update: Update, context):
     if update.effective_chat.id != ADMIN_ID:
         await update.message.reply_text("❌ Только администратор может использовать эту команду.")
         return
@@ -65,11 +72,11 @@ async def list_users(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         await update.message.reply_text(message)
 
-async def add_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def add_start(update: Update, context):
     await update.message.reply_text("Введите номер телефона (11 цифр, 7 или 8 в начале):")
     return PHONE
 
-async def add_phone(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def add_phone(update: Update, context):
     phone = update.message.text
     if db.validate_phone(phone):
         context.user_data['phone'] = phone
@@ -79,7 +86,7 @@ async def add_phone(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Неверный формат. Попробуйте ещё раз.")
         return PHONE
 
-async def add_email(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def add_email(update: Update, context):
     email = update.message.text
     if email == '-':
         context.user_data['email'] = None
@@ -91,7 +98,7 @@ async def add_email(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Введите ссылку ВК (или '-'):")
     return VK
 
-async def add_vk(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def add_vk(update: Update, context):
     vk = update.message.text
     if vk == '-':
         context.user_data['vk'] = None
@@ -113,11 +120,11 @@ async def add_vk(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("✅ Контакты сохранены.")
     return ConversationHandler.END
 
-async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def cancel(update: Update, context):
     await update.message.reply_text("Операция отменена.")
     return ConversationHandler.END
 
-async def view(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def view(update: Update, context):
     if context.args:
         username = context.args[0].lstrip('@')
         conn = sqlite3.connect(db.DB_NAME)
@@ -151,11 +158,11 @@ async def view(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             await update.message.reply_text("Нет данных. Используйте /add")
 
-async def add_phone_only_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def add_phone_only_start(update: Update, context):
     await update.message.reply_text("Введите номер телефона (11 цифр, 7 или 8 в начале):")
     return PHONE_ONLY
 
-async def add_phone_only_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def add_phone_only_handler(update: Update, context):
     phone = update.message.text
     if db.validate_phone(phone):
         chat_id = update.effective_chat.id
@@ -179,11 +186,11 @@ async def add_phone_only_handler(update: Update, context: ContextTypes.DEFAULT_T
         await update.message.reply_text("❌ Неверный формат. Попробуйте ещё раз.")
         return PHONE_ONLY
 
-async def add_email_only_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def add_email_only_start(update: Update, context):
     await update.message.reply_text("Введите email (или '-' чтобы пропустить):")
     return EMAIL_ONLY
 
-async def add_email_only_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def add_email_only_handler(update: Update, context):
     email = update.message.text
     if email == '-':
         email = None
@@ -209,11 +216,11 @@ async def add_email_only_handler(update: Update, context: ContextTypes.DEFAULT_T
     await update.message.reply_text("✅ Email сохранён!")
     return ConversationHandler.END
 
-async def add_vk_only_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def add_vk_only_start(update: Update, context):
     await update.message.reply_text("Введите ссылку ВК (или '-'):")
     return VK_ONLY
 
-async def add_vk_only_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def add_vk_only_handler(update: Update, context):
     vk = update.message.text
     if vk == '-':
         vk = None
@@ -238,19 +245,6 @@ async def add_vk_only_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
     conn.close()
     await update.message.reply_text("✅ ВК сохранён!")
     return ConversationHandler.END
-
-# ========== ДОПОЛНИТЕЛЬНЫЕ КОМАНДЫ ==========
-async def check_username(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    chat_id = update.effective_chat.id
-    conn = sqlite3.connect(db.DB_NAME)
-    cursor = conn.cursor()
-    cursor.execute("SELECT username FROM contacts WHERE chat_id = ?", (chat_id,))
-    row = cursor.fetchone()
-    conn.close()
-    if row:
-        await update.message.reply_text(f"Username в базе: @{row[0]}")
-    else:
-        await update.message.reply_text("Не найден")
 
 # ========== РЕГИСТРАЦИЯ ОБРАБОТЧИКОВ ==========
 conv_add = ConversationHandler(
@@ -281,54 +275,44 @@ conv_vk = ConversationHandler(
     fallbacks=[CommandHandler("cancel", cancel)],
 )
 
-application.add_handler(conv_add)
-application.add_handler(conv_phone)
-application.add_handler(conv_email)
-application.add_handler(conv_vk)
-application.add_handler(CommandHandler("start", start))
-application.add_handler(CommandHandler("view", view))
-application.add_handler(CommandHandler("list", list_users))
-application.add_handler(CommandHandler("check_username", check_username))
+# Регистрируем обработчики
+dp.add_handler(conv_add)
+dp.add_handler(conv_phone)
+dp.add_handler(conv_email)
+dp.add_handler(conv_vk)
+dp.add_handler(CommandHandler("start", start))
+dp.add_handler(CommandHandler("view", view))
+dp.add_handler(CommandHandler("list", list_users))
 
-# ========== FLASK (ДЛЯ HEALTH CHECK) ==========
-flask_app = Flask(__name__)
-
+# ========== FLASK ЭНДПОИНТЫ ==========
 @flask_app.route('/')
 def index():
-    return "Bot is running", 200
+    return "Contact Bot is running", 200
 
 @flask_app.route('/health')
 def health():
     return "OK", 200
 
-def run_flask():
-    port = int(os.environ.get('PORT', 10000))
-    flask_app.run(host='0.0.0.0', port=port, debug=False, use_reloader=False)
+@flask_app.route('/webhook', methods=['POST'])
+def webhook():
+    try:
+        update = Update.de_json(request.get_json(force=True), bot)
+        dp.process_update(update)
+        return "OK", 200
+    except Exception as e:
+        logging.error(f"Webhook error: {e}")
+        return "Error", 500
+
+# ========== УСТАНОВКА ВЕБХУКА ==========
+def set_webhook():
+    import requests
+    url = f"https://api.telegram.org/bot{TOKEN}/setWebhook?url={WEBHOOK_URL}"
+    response = requests.get(url)
+    logging.info(f"Webhook set response: {response.json()}")
 
 # ========== ТОЧКА ВХОДА ==========
 if __name__ == "__main__":
     db.init_db()
-
-    async def run_bot():
-        logging.info("🚀 Запуск бота в режиме polling...")
-        await application.initialize()
-        await application.start()
-        await application.updater.start_polling()
-        await asyncio.Event().wait()
-
-    def start_bot_thread():
-        asyncio.run(run_bot())
-
-    bot_thread = threading.Thread(target=start_bot_thread, daemon=True)
-    bot_thread.start()
-
-    flask_thread = threading.Thread(target=run_flask, daemon=True)
-    flask_thread.start()
-
-    logging.info("Main thread keeping service alive...")
-    try:
-        while True:
-            import time
-            time.sleep(10)
-    except KeyboardInterrupt:
-        logging.info("Shutting down...")
+    set_webhook()
+    port = int(os.environ.get('PORT', 10000))
+    flask_app.run(host='0.0.0.0', port=port)
