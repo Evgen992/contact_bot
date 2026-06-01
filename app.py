@@ -3,7 +3,7 @@ import sqlite3
 import logging
 import asyncio
 from flask import Flask, request
-from telegram import Update, Bot
+from telegram import Update
 from telegram.ext import Application, CommandHandler, ConversationHandler, MessageHandler, filters, ContextTypes
 from dotenv import load_dotenv
 import database as db
@@ -18,11 +18,11 @@ WEBHOOK_URL = f"{RENDER_URL}/webhook"
 
 logging.basicConfig(level=logging.INFO)
 
-# Создаем Flask приложение
 flask_app = Flask(__name__)
 
-# Создаем экземпляр Application (замена старого Dispatcher)
+# Создаём и инициализируем Application сразу
 application = Application.builder().token(TOKEN).build()
+application.initialize()
 
 ADMIN_ID = 7354713280
 PHONE, EMAIL, VK, PHONE_ONLY, EMAIL_ONLY, VK_ONLY = range(6)
@@ -157,7 +157,7 @@ async def view(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             await update.message.reply_text("Нет данных. Используйте /add")
 
-# Отдельные обновления (упрощённо)
+# === Отдельные обновления ===
 async def add_phone_only_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Введите номер телефона (11 цифр, 7 или 8 в начале):")
     return PHONE_ONLY
@@ -246,7 +246,7 @@ async def add_vk_only_handler(update: Update, context: ContextTypes.DEFAULT_TYPE
     await update.message.reply_text("✅ ВК сохранён!")
     return ConversationHandler.END
 
-# === Регистрация обработчиков ===
+# === Регистрация ===
 conv_add = ConversationHandler(
     entry_points=[CommandHandler("add", add_start)],
     states={
@@ -283,13 +283,11 @@ application.add_handler(CommandHandler("start", start))
 application.add_handler(CommandHandler("view", view))
 application.add_handler(CommandHandler("list", list_users))
 
-# === Эндпоинт Flask для вебхука ===
+# === Вебхук ===
 @flask_app.route('/webhook', methods=['POST'])
 def webhook():
-    import asyncio
     try:
         update = Update.de_json(request.get_json(force=True), application.bot)
-        # Запускаем асинхронную функцию синхронно
         asyncio.run(application.process_update(update))
         return "OK", 200
     except Exception as e:
@@ -304,23 +302,14 @@ def index():
 def health():
     return "OK", 200
 
-# === Установка вебхука ===
-async def set_webhook():
-    await application.bot.set_webhook(url=WEBHOOK_URL)
-
+# === Точка входа ===
 if __name__ == "__main__":
     db.init_db()
     
-    # Инициализация приложения
-    application.initialize()
-    
-    # Установка вебхука
+    # Установка вебхука (один раз при запуске)
     async def set_webhook():
         await application.bot.set_webhook(url=WEBHOOK_URL)
-    
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    loop.run_until_complete(set_webhook())
+    asyncio.run(set_webhook())
     
     # Запуск Flask
     port = int(os.environ.get('PORT', 10000))
