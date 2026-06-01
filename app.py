@@ -311,11 +311,17 @@ async def set_webhook():
 if __name__ == "__main__":
     db.init_db()
     
-    # Запускаем установку вебхука
+    # Инициализация приложения
+    application.initialize()
+    
+    # Установка вебхука
+    async def set_webhook():
+        await application.bot.set_webhook(url=WEBHOOK_URL)
+    
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
     loop.run_until_complete(set_webhook())
     
-    # Запускаем Flask
+    # Запуск Flask
     port = int(os.environ.get('PORT', 10000))
     flask_app.run(host='0.0.0.0', port=port)
