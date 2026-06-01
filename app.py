@@ -276,7 +276,34 @@ application.add_handler(CommandHandler("list", list_users))
 
 
 # ========== ТОЧКА ВХОДА ==========
+# ========== ТОЧКА ВХОДА (исправленная) ==========
 if __name__ == "__main__":
+    import asyncio
+    import threading
+
     db.init_db()
-    logging.info("🚀 Запуск бота в режиме polling...")
-    application.run_polling()
+
+    async def run_bot():
+        logging.info("🚀 Запуск бота в режиме polling...")
+        await application.initialize()
+        await application.start()
+        await application.updater.start_polling()
+        # Держим бота работающим
+        await asyncio.Event().wait()
+
+    def start_bot_thread():
+        asyncio.run(run_bot())
+
+    # Запускаем бота в отдельном потоке
+    bot_thread = threading.Thread(target=start_bot_thread, daemon=True)
+    bot_thread.start()
+
+    # Здесь может быть запуск Flask, если он нужен, но пока убираем
+    logging.info("Main thread keeping service alive...")
+    try:
+        # Бесконечное ожидание, чтобы основной поток не завершился
+        while True:
+            import time
+            time.sleep(10)
+    except KeyboardInterrupt:
+        logging.info("Shutting down...")
