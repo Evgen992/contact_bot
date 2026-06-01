@@ -285,10 +285,12 @@ application.add_handler(CommandHandler("list", list_users))
 
 # === Эндпоинт Flask для вебхука ===
 @flask_app.route('/webhook', methods=['POST'])
-async def webhook():
+def webhook():
+    import asyncio
     try:
         update = Update.de_json(request.get_json(force=True), application.bot)
-        await application.process_update(update)
+        # Запускаем асинхронную функцию синхронно
+        asyncio.run(application.process_update(update))
         return "OK", 200
     except Exception as e:
         logging.error(f"Webhook error: {e}")
