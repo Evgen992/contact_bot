@@ -21,6 +21,44 @@ ADMIN_ID = 7354713280
 
 PHONE, EMAIL, VK, PHONE_ONLY, EMAIL_ONLY, VK_ONLY = range(6)
 
+# Flask-приложение, которое будет "держать" порт
+flask_app = Flask(__name__)
+
+@flask_app.route('/')
+def index():
+    return "Contact Bot is running", 200
+
+@flask_app.route('/health')
+def health():
+    return "OK", 200
+
+def run_flask():
+    port = int(os.environ.get('PORT', 10000))
+    flask_app.run(host='0.0.0.0', port=port)
+
+ADMIN_ID = 7354713280
+PHONE, EMAIL, VK, PHONE_ONLY, EMAIL_ONLY, VK_ONLY = range(6)
+
+# ... все ваши существующие функции (start, add_phone, add_email и т.д.) ...
+# Они остаются без изменений, я их здесь не повторяю для краткости.
+# Просто убедитесь, что весь ваш код обработчиков команд остался ниже.
+
+def main():
+    app = ApplicationBuilder().token(TOKEN).build()
+
+    # ... все ваши обработчики (conv_handler, conv_phone и т.д.) ...
+    # Они остаются без изменений.
+
+    # Запускаем Flask в отдельном потоке
+    Thread(target=run_flask).start()
+
+    logging.info("Бот запущен...")
+    app.run_polling()
+
+if __name__ == "__main__":
+    db.init_db()
+    main()
+
 async def list_users(update: Update, context):
     """Показывает список всех пользователей (только для администратора)"""
     if update.effective_chat.id != ADMIN_ID:
