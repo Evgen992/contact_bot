@@ -1,9 +1,10 @@
 import os
 import sqlite3
 import logging
-from flask import Flask, request, jsonify
+import asyncio
+from flask import Flask, request
 from telegram import Update, Bot
-from telegram.ext import Dispatcher, CommandHandler, ConversationHandler, MessageHandler, filters
+from telegram.ext import Dispatcher, CommandHandler, ConversationHandler, MessageHandler, filters, CallbackContext
 from dotenv import load_dotenv
 import database as db
 
@@ -12,21 +13,19 @@ TOKEN = os.getenv("BOT_TOKEN")
 if not TOKEN:
     raise ValueError("BOT_TOKEN not set in .env")
 
-# URL вашего сервиса на Render
 RENDER_URL = "https://contact-bot-c3hw.onrender.com"
 WEBHOOK_URL = f"{RENDER_URL}/webhook"
 
 logging.basicConfig(level=logging.INFO)
 
-# Инициализация бота и диспетчера (заменитель Application)
+# Инициализация бота и диспетчера
 bot = Bot(token=TOKEN)
 dp = Dispatcher(bot, None, workers=0)
 
-# ID администратора
 ADMIN_ID = 7354713280
 PHONE, EMAIL, VK, PHONE_ONLY, EMAIL_ONLY, VK_ONLY = range(6)
 
-# Flask-приложение
+# Flask приложение
 flask_app = Flask(__name__)
 
 # === Flask endpoints ===
@@ -39,17 +38,17 @@ def health():
     return "OK", 200
 
 @flask_app.route('/webhook', methods=['POST'])
-def webhook():
+async def webhook():
     try:
         update = Update.de_json(request.get_json(force=True), bot)
-        dp.process_update(update)
+        await dp.process_update(update)
         return "OK", 200
     except Exception as e:
         logging.error(f"Webhook error: {e}")
         return "Error", 500
 
-# === Обработчики команд (те же самые, но без @async) ===
-def start(update: Update, context):
+# === Обработчики команд (синхронные) ===
+def start(update: Update, context: CallbackContext):
     update.message.reply_text(
         "👋 Привет! Я бот для сбора контактов.\n\n"
         "📋 Основные команды:\n"
@@ -64,7 +63,7 @@ def start(update: Update, context):
         "/list — список всех"
     )
 
-def list_users(update: Update, context):
+def list_users(update: Update, context: CallbackContext):
     if update.effective_chat.id != ADMIN_ID:
         update.message.reply_text("❌ Только администратор может использовать эту команду.")
         return
@@ -92,11 +91,11 @@ def list_users(update: Update, context):
     else:
         update.message.reply_text(message)
 
-def add_start(update: Update, context):
+def add_start(update: Update, context: CallbackContext):
     update.message.reply_text("Введите номер телефона (11 цифр, 7 или 8 в начале):")
     return PHONE
 
-def add_phone(update: Update, context):
+def add_phone(update: Update, context: CallbackContext):
     phone = update.message.text
     if db.validate_phone(phone):
         context.user_data['phone'] = phone
@@ -106,7 +105,7 @@ def add_phone(update: Update, context):
         update.message.reply_text("Неверный формат. Попробуйте ещё раз.")
         return PHONE
 
-def add_email(update: Update, context):
+def add_email(update: Update, context: CallbackContext):
     email = update.message.text
     if email == '-':
         context.user_data['email'] = None
@@ -118,7 +117,7 @@ def add_email(update: Update, context):
     update.message.reply_text("Введите ссылку ВК (или '-'):")
     return VK
 
-def add_vk(update: Update, context):
+def add_vk(update: Update, context: CallbackContext):
     vk = update.message.text
     if vk == '-':
         context.user_data['vk'] = None
@@ -140,11 +139,11 @@ def add_vk(update: Update, context):
     update.message.reply_text("✅ Контакты сохранены.")
     return ConversationHandler.END
 
-def cancel(update: Update, context):
+def cancel(update: Update, context: CallbackContext):
     update.message.reply_text("Операция отменена.")
     return ConversationHandler.END
 
-def view(update: Update, context):
+def view(update: Update, context: CallbackContext):
     if context.args:
         username = context.args[0].lstrip('@')
         conn = sqlite3.connect(db.DB_NAME)
@@ -178,12 +177,11 @@ def view(update: Update, context):
         else:
             update.message.reply_text("Нет данных. Используйте /add")
 
-# Отдельные обновления (упрощённо)
-def add_phone_only_start(update: Update, context):
+def add_phone_only_start(update: Update, context: CallbackContext):
     update.message.reply_text("Введите номер телефона (11 цифр, 7 или 8 в начале):")
     return PHONE_ONLY
 
-def add_phone_only_handler(update: Update, context):
+def add_phone_only_handler(update: Update, context: CallbackContext):
     phone = update.message.text
     if db.validate_phone(phone):
         chat_id = update.effective_chat.id
@@ -207,11 +205,11 @@ def add_phone_only_handler(update: Update, context):
         update.message.reply_text("❌ Неверный формат. Попробуйте ещё раз.")
         return PHONE_ONLY
 
-def add_email_only_start(update: Update, context):
+def add_email_only_start(update: Update, context: CallbackContext):
     update.message.reply_text("Введите email (или '-' чтобы пропустить):")
     return EMAIL_ONLY
 
-def add_email_only_handler(update: Update, context):
+def add_email_only_handler(update: Update, context: CallbackContext):
     email = update.message.text
     if email == '-':
         email = None
@@ -237,11 +235,11 @@ def add_email_only_handler(update: Update, context):
     update.message.reply_text("✅ Email сохранён!")
     return ConversationHandler.END
 
-def add_vk_only_start(update: Update, context):
+def add_vk_only_start(update: Update, context: CallbackContext):
     update.message.reply_text("Введите ссылку ВК (или '-'):")
     return VK_ONLY
 
-def add_vk_only_handler(update: Update, context):
+def add_vk_only_handler(update: Update, context: CallbackContext):
     vk = update.message.text
     if vk == '-':
         vk = None
@@ -302,7 +300,7 @@ dp.add_handler(CommandHandler("start", start))
 dp.add_handler(CommandHandler("view", view))
 dp.add_handler(CommandHandler("list", list_users))
 
-# === Настройка вебхука при запуске ===
+# === Установка вебхука ===
 def set_webhook():
     import requests
     url = f"https://api.telegram.org/bot{TOKEN}/setWebhook?url={WEBHOOK_URL}"
@@ -311,8 +309,6 @@ def set_webhook():
 
 if __name__ == "__main__":
     db.init_db()
-    # Устанавливаем вебхук
     set_webhook()
-    # Запускаем Flask-сервер
     port = int(os.environ.get('PORT', 10000))
     flask_app.run(host='0.0.0.0', port=port)
