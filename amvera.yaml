@@ -1,10 +1,12 @@
 version: 2
 meta:
   name: contact-bot
-  toolchain: python
+  toolchain:
+    name: python
+    version: "3.11"
 deploy:
   type: python
-  command: python app.py
+  command: pip install -r requirements.txt && python app.py
   environment:
     - name: BOT_TOKEN
       value: ${BOT_TOKEN}
