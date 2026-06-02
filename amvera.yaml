@@ -1,6 +1,7 @@
 version: 2
 meta:
   name: contact-bot
+  environment: python
   toolchain:
     name: pip
     version: "3.10"
