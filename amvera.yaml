@@ -1,0 +1,9 @@
+version: 2
+deploy:
+  type: python
+  command: python app.py
+  environment:
+    - name: BOT_TOKEN
+      value: ${BOT_TOKEN}
+    - name: DATABASE_URL
+      value: ${DATABASE_URL}
