@@ -4,6 +4,11 @@ meta:
   toolchain:
     name: python
     version: "3.11"
+  environment:
+    - name: BOT_TOKEN
+      value: ${BOT_TOKEN}
+    - name: DATABASE_URL
+      value: ${DATABASE_URL}
 deploy:
   type: python
   command: pip install -r requirements.txt && python app.py
