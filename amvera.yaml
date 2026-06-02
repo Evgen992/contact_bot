@@ -1,4 +1,6 @@
 version: 2
+meta:
+  name: contact-bot
 deploy:
   type: python
   command: python app.py
