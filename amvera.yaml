@@ -1,7 +1,9 @@
 version: 2
 meta:
   name: contact-bot
-  toolchain: python
+  toolchain:
+    name: pip
+    version: "3.10"
 deploy:
   type: python
   command: pip install -r requirements.txt && python app.py
