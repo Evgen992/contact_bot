@@ -3,7 +3,7 @@ import re
 
 DB_NAME = "contacts.db"
 
-def init_db():
+async def init_db():
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
     cursor.execute('''

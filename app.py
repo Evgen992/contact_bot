@@ -1,6 +1,6 @@
 import os
 import logging
-import asyncio
+import threading
 from flask import Flask
 from telegram import Update
 from telegram.ext import Application, CommandHandler, ConversationHandler, MessageHandler, filters, ContextTypes
@@ -14,7 +14,7 @@ if not TOKEN:
 
 logging.basicConfig(level=logging.INFO)
 
-# Flask для health check (чтобы Render не жаловался)
+# Flask для health check
 flask_app = Flask(__name__)
 
 @flask_app.route('/')
@@ -236,10 +236,6 @@ application.add_handler(CommandHandler("list", list_users))
 
 # ========== ЗАПУСК ==========
 if __name__ == "__main__":
-    import threading
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    loop.run_until_complete(db.init_db())
     threading.Thread(target=run_flask, daemon=True).start()
     logging.info("🚀 Бот запущен")
     application.run_polling()
