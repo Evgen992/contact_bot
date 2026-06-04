@@ -22,7 +22,6 @@ def validate_email(email):
 
 def validate_vk(vk_url):
     return vk_url and ('vk.com' in vk_url or 'm.vk.com' in vk_url)
-
 async def add_or_update_contact(chat_id, username, phone=None, email=None, vk=None):
     conn = await get_connection()
     row = await conn.fetchrow("SELECT phone, email, vk FROM contacts WHERE chat_id = $1", chat_id)
