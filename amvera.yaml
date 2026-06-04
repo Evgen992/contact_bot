@@ -1,0 +1,9 @@
+version: 2
+meta:
+  name: contact-bot
+  environment: docker
+  toolchain:
+    name: docker
+run:
+  containerPort: 8080
+  command: python app.py
