@@ -1,241 +1,168 @@
 import os
-import logging
-import threading
-from flask import Flask
-from telegram import Update
-from telegram.ext import Application, CommandHandler, ConversationHandler, MessageHandler, filters, ContextTypes
-from dotenv import load_dotenv
+import json
+from flask import Flask, request
+import requests
 import database as db
 
-load_dotenv()
-TOKEN = os.getenv("BOT_TOKEN")
-if not TOKEN:
-    raise ValueError("BOT_TOKEN not set in .env")
+app = Flask(__name__)
 
-logging.basicConfig(level=logging.INFO)
+TOKEN = os.environ.get("BOT_TOKEN")
+URL = os.environ.get("RENDER_URL", "https://contact-bot.onrender.com")
 
-# Flask для health check
-flask_app = Flask(__name__)
+# Хранилище временных данных пользователей
+user_data = {}
 
-@flask_app.route('/')
+def send_message(chat_id, text):
+    url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
+    payload = {"chat_id": chat_id, "text": text}
+    try:
+        requests.post(url, json=payload)
+    except Exception as e:
+        print(f"Error sending message: {e}")
+
+def save_contact(chat_id, username, phone, email, vk):
+    try:
+        db.add_or_update_contact(chat_id, username, phone, email, vk)
+        return True
+    except Exception as e:
+        print(f"Error saving contact: {e}")
+        return False
+
+def get_user_contacts(chat_id):
+    try:
+        row = db.get_contact_by_chat_id(chat_id)
+        if row:
+            return {"phone": row[0], "email": row[1], "vk": row[2]}
+        return None
+    except Exception as e:
+        print(f"Error getting user contacts: {e}")
+        return None
+
+def get_all_contacts():
+    try:
+        rows = db.get_all_contacts()
+        result = []
+        for row in rows:
+            result.append({"username": row[0], "phone": row[1], "email": row[2], "vk": row[3]})
+        return result
+    except Exception as e:
+        print(f"Error getting all contacts: {e}")
+        return []
+
+@app.route('/')
 def index():
     return "Bot is running", 200
 
-@flask_app.route('/health')
-def health():
-    return "OK", 200
-
-def run_flask():
-    port = int(os.environ.get('PORT', 8080))
-    flask_app.run(host='0.0.0.0', port=port, debug=False, use_reloader=False)
-
-# ========== ОБРАБОТЧИКИ КОМАНД ==========
-ADMIN_ID = 7354713280
-PHONE, EMAIL, VK, PHONE_ONLY, EMAIL_ONLY, VK_ONLY = range(6)
-
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(
-        "👋 Привет! Я бот для сбора контактов.\n\n"
-        "📋 Основные команды:\n"
-        "/add — добавить все контакты сразу\n"
-        "/view — посмотреть свои данные\n"
-        "/view @username — данные другого пользователя\n\n"
-        "✏️ Обновить отдельно:\n"
-        "/add_phone — телефон\n"
-        "/add_email — email\n"
-        "/add_vk — ВК\n\n"
-        "🔐 Админ-команда:\n"
-        "/list — список всех"
-    )
-
-async def list_users(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_chat.id != ADMIN_ID:
-        await update.message.reply_text("❌ Только администратор может использовать эту команду.")
-        return
-    rows = await db.get_all_contacts()
-    if not rows:
-        await update.message.reply_text("База пуста.")
-        return
-    message = "📋 Список контактов:\n\n"
-    for row in rows:
-        username, phone, email, vk = row
-        message += f"👤 @{username or 'no_username'}\n"
-        message += f"📞 {phone or '—'}\n"
-        message += f"✉️ {email or '—'}\n"
-        message += f"🌐 {vk or '—'}\n\n"
-    if len(message) > 4000:
-        for x in range(0, len(message), 4000):
-            await update.message.reply_text(message[x:x+4000])
-    else:
-        await update.message.reply_text(message)
-
-async def add_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Введите номер телефона (11 цифр, 7 или 8 в начале):")
-    return PHONE
-
-async def add_phone(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    phone = update.message.text
-    if db.validate_phone(phone):
-        context.user_data['phone'] = phone
-        await update.message.reply_text("Введите email (или '-' чтобы пропустить):")
-        return EMAIL
-    else:
-        await update.message.reply_text("Неверный формат. Попробуйте ещё раз.")
-        return PHONE
-
-async def add_email(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    email = update.message.text
-    if email == '-':
-        context.user_data['email'] = None
-    elif db.validate_email(email):
-        context.user_data['email'] = email
-    else:
-        await update.message.reply_text("Неверный email. Попробуйте ещё раз (или '-'):")
-        return EMAIL
-    await update.message.reply_text("Введите ссылку ВК (или '-'):")
-    return VK
-
-async def add_vk(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    vk = update.message.text
-    if vk == '-':
-        context.user_data['vk'] = None
-    elif db.validate_vk(vk):
-        context.user_data['vk'] = vk
-    else:
-        await update.message.reply_text("Неверная ссылка. Попробуйте ещё раз (или '-'):")
-        return VK
-    chat_id = update.effective_chat.id
-    username = update.effective_chat.username or "no_username"
-    await db.add_or_update_contact(
-        chat_id=chat_id,
-        username=username,
-        phone=context.user_data.get('phone'),
-        email=context.user_data.get('email'),
-        vk=context.user_data.get('vk')
-    )
-    await update.message.reply_text("✅ Контакты сохранены.")
-    return ConversationHandler.END
-
-async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Операция отменена.")
-    return ConversationHandler.END
-
-async def view(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if context.args:
-        username = context.args[0].lstrip('@')
-        row = await db.get_contact_by_username(username)
-        if row:
-            phone, email, vk = row
-            await update.message.reply_text(
-                f"📞 Телефон: {phone or 'не указан'}\n"
-                f"✉️ Email: {email or 'не указан'}\n"
-                f"🌐 ВК: {vk or 'не указан'}"
-            )
-        else:
-            await update.message.reply_text("Пользователь не найден.")
-    else:
-        chat_id = update.effective_chat.id
-        row = await db.get_contact_by_chat_id(chat_id)
-        if row:
-            phone, email, vk = row
-            await update.message.reply_text(
-                f"📞 Телефон: {phone or 'не указан'}\n"
-                f"✉️ Email: {email or 'не указан'}\n"
-                f"🌐 ВК: {vk or 'не указан'}"
-            )
-        else:
-            await update.message.reply_text("Нет данных. Используйте /add")
-
-async def add_phone_only_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Введите номер телефона (11 цифр, 7 или 8 в начале):")
-    return PHONE_ONLY
-
-async def add_phone_only_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    phone = update.message.text
-    if db.validate_phone(phone):
-        chat_id = update.effective_chat.id
-        username = update.effective_chat.username or "no_username"
-        await db.add_or_update_contact(chat_id, username, phone=phone)
-        await update.message.reply_text("✅ Телефон сохранён!")
-        return ConversationHandler.END
-    else:
-        await update.message.reply_text("❌ Неверный формат. Попробуйте ещё раз.")
-        return PHONE_ONLY
-
-async def add_email_only_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Введите email (или '-' чтобы пропустить):")
-    return EMAIL_ONLY
-
-async def add_email_only_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    email = update.message.text
-    if email == '-':
-        email = None
-    elif not db.validate_email(email):
-        await update.message.reply_text("❌ Неверный email. Попробуйте ещё раз (или '-'):")
-        return EMAIL_ONLY
-    chat_id = update.effective_chat.id
-    username = update.effective_chat.username or "no_username"
-    await db.add_or_update_contact(chat_id, username, email=email)
-    await update.message.reply_text("✅ Email сохранён!")
-    return ConversationHandler.END
-
-async def add_vk_only_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Введите ссылку ВК (или '-'):")
-    return VK_ONLY
-
-async def add_vk_only_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    vk = update.message.text
-    if vk == '-':
-        vk = None
-    elif not db.validate_vk(vk):
-        await update.message.reply_text("❌ Неверная ссылка. Попробуйте ещё раз (или '-'):")
-        return VK_ONLY
-    chat_id = update.effective_chat.id
-    username = update.effective_chat.username or "no_username"
-    await db.add_or_update_contact(chat_id, username, vk=vk)
-    await update.message.reply_text("✅ ВК сохранён!")
-    return ConversationHandler.END
-
-# ========== РЕГИСТРАЦИЯ ОБРАБОТЧИКОВ ==========
-conv_add = ConversationHandler(
-    entry_points=[CommandHandler("add", add_start)],
-    states={
-        PHONE: [MessageHandler(filters.TEXT & ~filters.COMMAND, add_phone)],
-        EMAIL: [MessageHandler(filters.TEXT & ~filters.COMMAND, add_email)],
-        VK: [MessageHandler(filters.TEXT & ~filters.COMMAND, add_vk)],
-    },
-    fallbacks=[CommandHandler("cancel", cancel)],
-)
-
-conv_phone = ConversationHandler(
-    entry_points=[CommandHandler("add_phone", add_phone_only_start)],
-    states={PHONE_ONLY: [MessageHandler(filters.TEXT & ~filters.COMMAND, add_phone_only_handler)]},
-    fallbacks=[CommandHandler("cancel", cancel)],
-)
-
-conv_email = ConversationHandler(
-    entry_points=[CommandHandler("add_email", add_email_only_start)],
-    states={EMAIL_ONLY: [MessageHandler(filters.TEXT & ~filters.COMMAND, add_email_only_handler)]},
-    fallbacks=[CommandHandler("cancel", cancel)],
-)
-
-conv_vk = ConversationHandler(
-    entry_points=[CommandHandler("add_vk", add_vk_only_start)],
-    states={VK_ONLY: [MessageHandler(filters.TEXT & ~filters.COMMAND, add_vk_only_handler)]},
-    fallbacks=[CommandHandler("cancel", cancel)],
-)
-
-application = Application.builder().token(TOKEN).build()
-application.add_handler(conv_add)
-application.add_handler(conv_phone)
-application.add_handler(conv_email)
-application.add_handler(conv_vk)
-application.add_handler(CommandHandler("start", start))
-application.add_handler(CommandHandler("view", view))
-application.add_handler(CommandHandler("list", list_users))
-
-# ========== ЗАПУСК ==========
-if __name__ == "__main__":
-    threading.Thread(target=run_flask, daemon=True).start()
-    logging.info("🚀 Бот запущен")
-    application.run_polling()
+@app.route(f'/webhook/{TOKEN}', methods=['POST'])
+def webhook():
+    try:
+        data = request.get_json()
+        if data and 'message' in data:
+            message = data['message']
+            chat_id = message['chat']['id']
+            username = message['chat'].get('username', 'no_username')
+            text = message.get('text', '')
+            
+            # Проверяем, находится ли пользователь в процессе добавления контактов
+            if chat_id in user_data:
+                state = user_data[chat_id]['state']
+                
+                if state == 'awaiting_phone':
+                    phone = text.strip()
+                    if db.validate_phone(phone):
+                        user_data[chat_id]['phone'] = phone
+                        user_data[chat_id]['state'] = 'awaiting_email'
+                        send_message(chat_id, "Введите email (или '-' чтобы пропустить):")
+                    else:
+                        send_message(chat_id, "❌ Неверный формат телефона. Введите 11 цифр, начиная с 7 или 8:")
+                    return "OK", 200
+                
+                elif state == 'awaiting_email':
+                    email = text.strip()
+                    if email == '-':
+                        user_data[chat_id]['email'] = None
+                    elif db.validate_email(email):
+                        user_data[chat_id]['email'] = email
+                    else:
+                        send_message(chat_id, "❌ Неверный формат email. Попробуйте ещё раз (или '-' чтобы пропустить):")
+                        return "OK", 200
+                    
+                    user_data[chat_id]['state'] = 'awaiting_vk'
+                    send_message(chat_id, "Введите ссылку ВК (или '-' чтобы пропустить):")
+                    return "OK", 200
+                
+                elif state == 'awaiting_vk':
+                    vk = text.strip()
+                    if vk == '-':
+                        user_data[chat_id]['vk'] = None
+                    elif db.validate_vk(vk):
+                        user_data[chat_id]['vk'] = vk
+                    else:
+                        send_message(chat_id, "❌ Неверная ссылка ВК. Попробуйте ещё раз (или '-' чтобы пропустить):")
+                        return "OK", 200
+                    
+                    # Сохраняем все данные
+                    data = user_data[chat_id]
+                    success = save_contact(chat_id, username, data['phone'], data['email'], data['vk'])
+                    if success:
+                        send_message(chat_id, "✅ Контакты успешно сохранены!")
+                    else:
+                        send_message(chat_id, "❌ Ошибка при сохранении контактов. Попробуйте позже.")
+                    
+                    # Удаляем временные данные
+                    del user_data[chat_id]
+                    return "OK", 200
+            
+            # Обработка команд
+            if text == '/start':
+                send_message(chat_id, "👋 Привет! Я бот для сбора контактов.\n\n"
+                                     "📋 Команды:\n"
+                                     "/add — добавить контакты\n"
+                                     "/view — посмотреть свои данные\n"
+                                     "/list — список всех (только админ)\n"
+                                     "/help — помощь")
+            
+            elif text == '/help':
+                send_message(chat_id, "Доступные команды:\n"
+                                     "/add — добавить или обновить контакты\n"
+                                     "/view — посмотреть свои контакты\n"
+                                     "/list — список всех пользователей\n"
+                                     "/start — приветствие")
+            
+            elif text == '/list':
+                if chat_id == 7354713280:  # твой ID
+                    contacts = get_all_contacts()
+                    if contacts:
+                        msg = "📋 Список контактов:\n\n"
+                        for c in contacts:
+                            msg += f"👤 @{c['username'] or 'no_username'}\n"
+                            msg += f"📞 {c['phone'] or '—'}\n"
+                            msg += f"✉️ {c['email'] or '—'}\n"
+                            msg += f"🌐 {c['vk'] or '—'}\n\n"
+                        send_message(chat_id, msg[:4000])
+                    else:
+                        send_message(chat_id, "База пуста.")
+                else:
+                    send_message(chat_id, "❌ Только администратор может использовать эту команду.")
+            
+            elif text == '/view':
+                contacts = get_user_contacts(chat_id)
+                if contacts:
+                    send_message(chat_id, f"📞 Телефон: {contacts['phone'] or 'не указан'}\n"
+                                          f"✉️ Email: {contacts['email'] or 'не указан'}\n"
+                                          f"🌐 ВК: {contacts['vk'] or 'не указан'}")
+                else:
+                    send_message(chat_id, "Нет данных. Используйте /add")
+            
+            elif text == '/add':
+                # Начинаем процесс добавления контактов
+                user_data[chat_id] = {'state': 'awaiting_phone', 'phone': None, 'email': None, 'vk': None}
+                send_message(chat_id, "Введите номер телефона (11 цифр, начиная с 7 или 8):")
+            
+            else:
+                send_message(chat_id, f"❌ Неизвестная команда: {text}\n\nИспользуйте /help для списка команд.")
+        
+        return "OK", 200
+    except Exception as e:
+        print(f"Error in webhook: {e}")
+        return "Error", 500
