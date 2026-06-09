@@ -65,6 +65,7 @@ def webhook():
             username = message['chat'].get('username', 'no_username')
             text = message.get('text', '')
 
+            # Обработка диалога добавления контактов
             if chat_id in user_data:
                 state = user_data[chat_id]['state']
                 if state == 'awaiting_phone':
@@ -97,27 +98,36 @@ def webhook():
                         send_message(chat_id, "❌ Ошибка базы данных.")
                     return "OK", 200
 
+            # Обработка команд
             if text == '/start':
-                send_message(chat_id, "👋 Привет! Я бот для сбора контактов.\n\n/add — добавить контакты\n/view — мои данные\n/list — список (админ)\n/help — помощь")
+                send_message(chat_id, "👋 Привет! Я бот для сбора контактов.\n\n/add — добавить контакты\n/view — мои данные\n/list — список всех\n/list @username — данные пользователя\n/help — помощь")
             elif text == '/help':
-                send_message(chat_id, "/add — начать добавление\n/view — посмотреть свои данные\n/list — список всех (только для админа)")
+                send_message(chat_id, "/add — начать добавление\n/view — посмотреть свои данные\n/list — список всех\n/list @username — данные пользователя")
             elif text == '/view':
                 contacts = get_user_contacts(chat_id)
                 if contacts:
                     send_message(chat_id, f"📞 Телефон: {contacts['phone'] or '—'}\n✉️ Email: {contacts['email'] or '—'}\n🌐 ВК: {contacts['vk'] or '—'}")
                 else:
                     send_message(chat_id, "Нет данных. Используйте /add")
-            elif text == '/list' and chat_id == 7354713280:
+            elif text == '/list':
                 contacts = get_all_contacts()
                 if contacts:
                     msg = "📋 Список:\n\n" + "\n".join([f"@{c['username']}: {c['phone'] or '—'} / {c['email'] or '—'} / {c['vk'] or '—'}" for c in contacts])
                     send_message(chat_id, msg[:4000])
                 else:
                     send_message(chat_id, "База пуста.")
+            elif text.startswith('/list '):
+                username = text.split(' ')[1].lstrip('@')
+                row = db.get_contact_by_username(username)
+                if row:
+                    phone, email, vk = row
+                    send_message(chat_id, f"📞 Телефон: {phone or '—'}\n✉️ Email: {email or '—'}\n🌐 ВК: {vk or '—'}")
+                else:
+                    send_message(chat_id, f"Пользователь @{username} не найден.")
             elif text == '/add':
                 user_data[chat_id] = {'state': 'awaiting_phone'}
                 send_message(chat_id, "Введите номер телефона (11 цифр, 7 или 8 в начале):")
-            elif chat_id != 7354713280:
+            else:
                 send_message(chat_id, f"Неизвестная команда: {text}. Используйте /help")
         return "OK", 200
     except Exception as e:
