@@ -14,6 +14,9 @@ WEBHOOK_URL = f"{RENDER_URL}/webhook"
 
 user_data = {}
 
+# ID администратора (только этот пользователь может использовать /list)
+ADMIN_ID = 7354713280  # твой ID
+
 def send_message(chat_id, text):
     url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
     try:
@@ -65,7 +68,6 @@ def webhook():
             username = message['chat'].get('username', 'no_username')
             text = message.get('text', '')
 
-            # Обработка диалога добавления контактов
             if chat_id in user_data:
                 state = user_data[chat_id]['state']
                 if state == 'awaiting_phone':
@@ -98,11 +100,10 @@ def webhook():
                         send_message(chat_id, "❌ Ошибка базы данных.")
                     return "OK", 200
 
-            # Обработка команд
             if text == '/start':
-                send_message(chat_id, "👋 Привет! Я бот для сбора контактов.\n\n/add — добавить контакты\n/view — мои данные\n/list — список всех\n/list @username — данные пользователя\n/help — помощь")
+                send_message(chat_id, "👋 Привет! Я бот для сбора контактов.\n\n/add — добавить контакты\n/view — мои данные\n/list — список всех (только админ)\n/list @username — данные пользователя\n/help — помощь")
             elif text == '/help':
-                send_message(chat_id, "/add — начать добавление\n/view — посмотреть свои данные\n/list — список всех\n/list @username — данные пользователя")
+                send_message(chat_id, "/add — начать добавление\n/view — посмотреть свои данные\n/list — список всех (только админ)\n/list @username — данные пользователя")
             elif text == '/view':
                 contacts = get_user_contacts(chat_id)
                 if contacts:
@@ -110,12 +111,15 @@ def webhook():
                 else:
                     send_message(chat_id, "Нет данных. Используйте /add")
             elif text == '/list':
-                contacts = get_all_contacts()
-                if contacts:
-                    msg = "📋 Список:\n\n" + "\n".join([f"@{c['username']}: {c['phone'] or '—'} / {c['email'] or '—'} / {c['vk'] or '—'}" for c in contacts])
-                    send_message(chat_id, msg[:4000])
+                if chat_id == ADMIN_ID:
+                    contacts = get_all_contacts()
+                    if contacts:
+                        msg = "📋 Список:\n\n" + "\n".join([f"@{c['username']}: {c['phone'] or '—'} / {c['email'] or '—'} / {c['vk'] or '—'}" for c in contacts])
+                        send_message(chat_id, msg[:4000])
+                    else:
+                        send_message(chat_id, "База пуста.")
                 else:
-                    send_message(chat_id, "База пуста.")
+                    send_message(chat_id, "❌ Команда /list доступна только администратору.")
             elif text.startswith('/list '):
                 username = text.split(' ')[1].lstrip('@')
                 row = db.get_contact_by_username(username)
