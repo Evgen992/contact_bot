@@ -17,7 +17,7 @@ def validate_email(email):
     return re.match(r'^[\w\.-]+@[\w\.-]+\.\w+$', email) is not None
 
 def validate_vk(vk_url):
-    return vk_url and ('vk.' in vk_url)
+    return vk_url and len(vk_url) > 0
 def add_or_update_contact(chat_id, username, phone=None, email=None, vk=None):
     conn = get_connection()
     cur = conn.cursor()
